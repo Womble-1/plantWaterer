@@ -2,6 +2,7 @@
 // v0.3 included variables.h,  relay code , made mqtt_port a variable
 // v0.4 gets threshold variable from MQTT topic
 // v0.5 changed for new moisture sensor.  introduced sampling and averaging.
+// v0.6
 
 
 #include <ESP8266WiFi.h>
@@ -23,21 +24,25 @@
 #define moisture_topic "plant1/moisture"
 #define log_topic "plant1/log"
 //#define temperature_topic "plant1/temperature"
-
+boolean loggingMQTT = false;
 const int relayPin = D1;
 float threshold = 30;  // default percentage moisture at which action is taken
-int pumpTime = 5000;   //length of time the pump is on before a recheck
+int pumpTime = 2000;   //length of time the pump is on before a recheck
 int loopTime = 10000;   //length of time to pause before looping
 String logout = "";   // used for logging output. to serial and to MQTT
 
 float VoltagePercentage;
-float voltageWet = 572;
-float voltageDry = 743;
+//float voltageWet = 590;//water
+//float voltageDry = 739;//dry
+float voltageWet = 600;//wet soil
+float voltageDry = 734;//drysoil
+
 int i = 1;
 int s;
 float sval = 0;
 float svalAverage;
 int sampleCount = 100;  //how many readings should be taken from A0 before averaging
+
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -53,6 +58,13 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   //setup the relay
   pinMode(relayPin, OUTPUT);
+
+  //not working, in the wrong place ??
+ // logout = "Host Info  ";
+//  logout += WiFi.localIP();
+//  logout = "   ";
+//  logout += HostName;
+//  if(loggingMQTT){client.publish(log_topic, String(logout).c_str(), true);}
 
 }
 
@@ -77,6 +89,7 @@ void setup_wifi() {
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
+
 }
 
 void reconnect() {
@@ -106,7 +119,8 @@ bool checkBound(float newValue, float prevValue, float maxDiff) {
 
   //grab settings from MQTT
   //boolean subscribe (topic, [qos])
-//subscribe to string: https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_basic/mqtt_basic.ino
+//subscribe to string:
+//https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_basic/mqtt_basic.ino
 
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived [");
@@ -137,10 +151,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
 }
 
 
-long lastMsg = 0;
-float temp = 0.0;
-float hum = 0.0;
-float diff = 1.0;
+//long lastMsg = 0;
+//float temp = 0.0;
+//float hum = 0.0;
+//float diff = 1.0;
 int n = 0;
 
 
@@ -168,56 +182,64 @@ void loop() {
   svalAverage = sval / sampleCount;    // average
   VoltagePercentage = (1 - (  (svalAverage - voltageWet) / (voltageDry - voltageWet)  )) * 100;
 
-Serial.print(i);
+  logout = "LoopCount:";
+  logout += i;
+  logout += "\n";
+  Serial.print(logout);
+  //client.publish(log_topic, String(logout).c_str(), true);
 
-  logout = "svalAverage:";
+  logout = "A0 Sample Average:";
   logout += svalAverage;
+  if(loggingMQTT){client.publish(log_topic, String(logout).c_str(), true);}
   logout += "\n";
   Serial.print(logout);
-  client.publish(log_topic, String(logout).c_str(), true);
-  logout = "";
+  logout = "Moisture:  ";
   logout += VoltagePercentage;
+  logout += "%";
+  if(loggingMQTT){client.publish(log_topic, String(logout).c_str(), true);}
   logout += "\n";
-  logout = "%";
   Serial.print(logout);
-  client.publish(log_topic, String(logout).c_str(), true);
   logout = "threshold: "; 
   logout += threshold;
+  if(loggingMQTT){client.publish(log_topic, String(logout).c_str(), true);}
   logout += "\n";
   Serial.print(logout);
-  client.publish(log_topic, String(logout).c_str(), true);
+  
 
   client.publish(moisture_topic, String(VoltagePercentage).c_str(), true);
 
   if (VoltagePercentage <= threshold) {
 
     digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-    logout = "VoltagePercentage <= threhold\n";    
+    logout = "VoltagePercentage <= threhold";    
     Serial.print(logout);    
     client.publish(log_topic, String(logout).c_str(), true);
     //turn on the relay, then off again
     digitalWrite(relayPin, HIGH); // turn on relay with voltage HIGH
     logout = "Pump Running for ";
     logout += pumpTime/1000;
-    logout += " Seconds\n";
-    Serial.print(logout);    
-    client.publish(log_topic, String(logout).c_str(), true);
+    logout += " Seconds";
+  if(loggingMQTT){client.publish(log_topic, String(logout).c_str(), true);}
+  logout += "\n";
+  Serial.print(logout);
     delay(pumpTime);              // pumpRunning
     digitalWrite(relayPin, LOW);  // turn off relay with voltage LOW
 
   }
   else {
     digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-    logout = "VoltagePercentage > threhold\n";    
-    Serial.print(logout);    
-    client.publish(log_topic, String(logout).c_str(), true);
+    logout = "VoltagePercentage > threhold";    
+  if(loggingMQTT){client.publish(log_topic, String(logout).c_str(), true);}
+  logout += "\n";
+  Serial.print(logout);
   }
 
   logout = "Waiting for ";
   logout += loopTime/1000;
-  logout += " Seconds\n";
-  Serial.print(logout);    
-  client.publish(log_topic, String(logout).c_str(), true);
+  logout += " Seconds";
+  if(loggingMQTT){client.publish(log_topic, String(logout).c_str(), true);}
+  logout += "\n";
+  Serial.print(logout);
   i++;
   delay(loopTime);
   Serial.print(" \n");
