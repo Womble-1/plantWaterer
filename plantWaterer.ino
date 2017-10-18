@@ -1,6 +1,7 @@
-// v 0.2 Moisture sensor
+// v0.2 Moisture sensor
 // v0.3 included variables.h,  relay code , made mqtt_port a variable
 // v0.4 gets threshold variable from MQTT topic
+// v0.5 changed for new moisture sensor.  introduced sampling and averaging.
 
 
 #include <ESP8266WiFi.h>
@@ -23,13 +24,20 @@
 #define log_topic "plant1/log"
 //#define temperature_topic "plant1/temperature"
 
-float sensorValue;
-float MoisturePercentage;
 const int relayPin = D1;
 float threshold = 30;  // default percentage moisture at which action is taken
 int pumpTime = 5000;   //length of time the pump is on before a recheck
 int loopTime = 10000;   //length of time to pause before looping
 String logout = "";   // used for logging output. to serial and to MQTT
+
+float VoltagePercentage;
+float voltageWet = 572;
+float voltageDry = 743;
+int i = 1;
+int s;
+float sval = 0;
+float svalAverage;
+int sampleCount = 100;  //how many readings should be taken from A0 before averaging
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -147,31 +155,44 @@ void loop() {
   client.loop();
 
 
+  sval = 0;
+  VoltagePercentage = 0;
+  //https://www.arduino.cc/en/Reference/FunctionDeclaration
 
-  sensorValue = analogRead(A0); // read analog input pin 0
-  MoisturePercentage = (1 - (sensorValue / 1024)) * 100;
+  
+  for (s = 0; s < sampleCount; s++) {
+    sval = sval + analogRead(A0);  
+    delay(200);
+  }
+  
+  svalAverage = sval / sampleCount;    // average
+  VoltagePercentage = (1 - (  (svalAverage - voltageWet) / (voltageDry - voltageWet)  )) * 100;
 
-  Serial.print(sensorValue, DEC); // prints the value read
-  Serial.print("   ");
+Serial.print(i);
 
-  Serial.print(MoisturePercentage);
-  Serial.print("%");
-  Serial.print("   ");
-  Serial.print(threshold);
-  Serial.print("%");
-  Serial.print("   \n");
-  logout = "threshold: "; //+= threshold;
+  logout = "svalAverage:";
+  logout += svalAverage;
+  logout += "\n";
+  Serial.print(logout);
+  client.publish(log_topic, String(logout).c_str(), true);
+  logout = "";
+  logout += VoltagePercentage;
+  logout += "\n";
+  logout = "%";
+  Serial.print(logout);
+  client.publish(log_topic, String(logout).c_str(), true);
+  logout = "threshold: "; 
   logout += threshold;
   logout += "\n";
   Serial.print(logout);
   client.publish(log_topic, String(logout).c_str(), true);
 
-  client.publish(moisture_topic, String(MoisturePercentage).c_str(), true);
+  client.publish(moisture_topic, String(VoltagePercentage).c_str(), true);
 
-  if (MoisturePercentage <= threshold) {
+  if (VoltagePercentage <= threshold) {
 
     digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-    logout = "moisturePercentage <= threhold\n";    
+    logout = "VoltagePercentage <= threhold\n";    
     Serial.print(logout);    
     client.publish(log_topic, String(logout).c_str(), true);
     //turn on the relay, then off again
@@ -187,22 +208,17 @@ void loop() {
   }
   else {
     digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-    logout = "moisturePercentage > threhold\n";    
+    logout = "VoltagePercentage > threhold\n";    
     Serial.print(logout);    
     client.publish(log_topic, String(logout).c_str(), true);
   }
-
-  //      for (int i=0; i <= 10; i++){
-  //            delay(10000);
-  //      }
-  // 600000 = 10 mins
 
   logout = "Waiting for ";
   logout += loopTime/1000;
   logout += " Seconds\n";
   Serial.print(logout);    
   client.publish(log_topic, String(logout).c_str(), true);
-  
+  i++;
   delay(loopTime);
   Serial.print(" \n");
 }
