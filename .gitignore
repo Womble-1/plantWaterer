@@ -1,3 +1,7 @@
+#custom
+#Ignore Secrets
+variables.h
+
 # Windows image file caches
 Thumbs.db
 ehthumbs.db
